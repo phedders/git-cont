@@ -1,3 +1,4 @@
 #!/usr/bin/ruby
 
 print File.dirname(__FILE__)
+
