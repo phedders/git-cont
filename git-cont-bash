@@ -1,33 +1,37 @@
 #!/bin/bash
 
-
 dir="$1"
 [ "$dir" == "" ] && dir=`pwd`
-cd $dir; dir=`pwd`; cdir="${dir}-cont"
-tmpfile="${cdir}/git-tmp-$$"
-echo $dir $cdir $tmpfile
+cd $dir; dir=`pwd`; contdir="${dir}-cont"
+tmpfile="${dir}/.git-cont-tmp-$$"
+echo $dir $contdir $tmpfile
 
 branch=`git-branch|grep "^\*"|awk '{print $2}'`
 
-[ -d "$cdir" ] || git-clone $dir $cdir
+[ -d "$contdir" ] || git-clone $dir $contdir
 
-while sleep 5; do 
+while :; do 
 				(
 				cd "$dir";
 				branch=`git-branch|grep "^\*"|awk '{print $2}'`
 				( git-diff; git-diff --cached; ) > $tmpfile
+				cat $tmpfile
 				if ([ -s "${tmpfile}" ]); then
-								cd "$cdir";
+								echo "Found a change...."
+								cd "$contdir";
 								git-branch |grep -q "${branch}-cont" || git-checkout --track -b ${branch}-cont ${branch}
-								git-pull origin ${branch}:${branch}-cont
 
 								git-checkout -f ${branch}
+								git-clean -f
+								git-pull origin ${branch}
 								git-apply ${tmpfile}
 								git-diff ${branch}-cont > $tmpfile
 								git-checkout -f ${branch}-cont
+								git-merge ${branch}
 								git-apply < $tmpfile
 								git-commit -am "Merge by git-cont"
 				fi
+				sleep 5
 				rm -f $tmpfile
 				)
 done

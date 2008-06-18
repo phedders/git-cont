@@ -1,4 +1,70 @@
 #!/usr/bin/ruby
+require 'ruby-debug'
+require 'rubygems'
+require 'INotify'
+require 'git'
+require 'tempfile'
 
-print File.dirname(__FILE__)
+work_dir=Dir.pwd
+cont_dir="#{work_dir}-cont"
+old_diff=nil
+
+print "#{work_dir} \>\> #{cont_dir}\n"
+
+work=Git.open(work_dir)
+begin
+cont=Git.open(cont_dir)
+rescue
+  if (File.exists?(cont_dir))
+    print "There is something already at #{cont_dir} but it is not a git-repo!\n"
+    exit 98
+  else
+    cont=Git.clone(work_dir,cont_dir)
+  end
+end
+
+inot = INotify::INotify.new()
+
+inot.ignore_dir_recursively(work_dir+".git")
+inot.watch_dir_recursively(work_dir, INotify::IN_MODIFY)
+puts "Entering inotify event state"
+inot.each_event do |event|
+  puts event.type+" "+event.filename
+
+  branch=work.branch.full
+  cont.branch("#{branch}").create
+  cont.branch("#{branch}-cont").create
+  tempfile=Tempfile.new("git-cont")
+  tempfile2=Tempfile.new("git-cont")
+  print "branch #{branch}\n"
+
+  diff=work.diff.patch
+  puts diff
+  if diff != old_diff
+    tempfile.puts diff
+    tempfile.flush
+
+    puts "Applying patch to main branch"
+    cont.checkout(branch)
+    cont.reset_hard
+    cont.pull("origin", "origin/#{branch}")
+    cont.apply(tempfile.path) rescue "First apply failed\n#{$:}"
+    tempfile2.puts cont.diff("#{branch}-cont").patch
+    size=tempfile2.size; tempfile2.close
+    puts "Size #{size}"
+    if size > 1
+    puts "Applying patch to continuous branch"
+      cont.reset_hard
+      cont.checkout("#{branch}-cont")
+      cont.merge(branch)
+      cont.apply(tempfile2.path) rescue puts "Problem applying patch\n#{$!}"
+      cont.add(cont_dir)
+      cont.commit_all("Update of current status by git-cont") rescue puts "Problem commiting patch\n#{$!}"
+      puts "done"
+    end
+  end
+  old_diff=diff
+  tempfile.unlink
+  tempfile2.unlink
+end
 
